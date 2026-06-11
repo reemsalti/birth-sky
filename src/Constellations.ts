@@ -57,7 +57,7 @@ export class Constellations {
   private showBirthLines = true;
 
   async load() {
-    const response = await fetch("/data/constellations.lines.json");
+    const response = await fetch(`${import.meta.env.BASE_URL}data/constellations.lines.json`);
     const json = await response.json();
     const features: ConstellationFeature[] = json.features;
 

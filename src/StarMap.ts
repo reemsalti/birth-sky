@@ -67,7 +67,7 @@ export class StarMap {
   }
 
   async load(): Promise<THREE.Points> {
-    const response = await fetch("/data/stars.json");
+    const response = await fetch(`${import.meta.env.BASE_URL}data/stars.json`);
     const { stars, pickable } = (await response.json()) as {
       stars: StarTuple[];
       pickable: Array<{
