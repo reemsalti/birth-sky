@@ -1,0 +1,22 @@
+{
+  "name": "birth-sky",
+  "version": "1.0.0",
+  "description": "Enter your birthday, see the sky you were born under.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build-stars": "node scripts/build-stars.mjs",
+    "build": "npm run build-stars && tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "astronomia": "^4.2.0",
+    "gsap": "^3.15.0",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
+  }
+}

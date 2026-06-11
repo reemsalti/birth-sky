@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Birth Sky</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="sky"></canvas>
+    <div id="view-fade" aria-hidden="true"></div>
+
+    <!-- labels for planets get positioned over the canvas from JS -->
+    <div id="labels"></div>
+    <div id="viewer-labels" class="hidden"></div>
+
+    <!-- hover a bright star for its details -->
+    <div id="star-tooltip" class="hidden"></div>
+
+    <!-- info about the birth constellation's stars -->
+    <div id="constellation-stack" class="hidden">
+      <aside id="constellation-panel" class="info-panel hidden collapsed">
+        <div class="panel-header">
+          <button id="panel-toggle" class="panel-toggle" aria-label="toggle constellation info">
+            <span class="panel-title">constellation</span>
+            <span class="panel-chevron">&#8964;</span>
+          </button>
+          <button id="panel-close" class="panel-dismiss" aria-label="dismiss">&times;</button>
+        </div>
+        <div id="panel-content" class="panel-body"></div>
+      </aside>
+      <button id="change-birthday" class="sky-control-btn">change date</button>
+    </div>
+
+    <!-- close-up body viewer chrome -->
+    <button id="back-to-sky" class="hidden">&larr; back to sky</button>
+    <aside id="body-info" class="info-panel hidden collapsed">
+      <div class="panel-header">
+        <button id="body-info-toggle" class="panel-toggle" aria-label="toggle body info">
+          <span id="body-info-title" class="panel-title">planet</span>
+          <span class="panel-chevron">&#8964;</span>
+        </button>
+      </div>
+      <div id="body-info-content" class="panel-body"></div>
+    </aside>
+
+    <div id="sky-controls" class="hidden">
+      <button id="toggle-constellations" class="sky-control-btn">hide constellations</button>
+      <button id="toggle-birth-constellation" class="sky-control-btn">hide birth constellation</button>
+      <button id="toggle-labels" class="sky-control-btn">hide labels</button>
+      <button id="toggle-orbits" class="sky-control-btn hidden">hide orbits</button>
+      <button id="toggle-stars" class="sky-control-btn hidden">hide stars</button>
+    </div>
+
+    <div id="body-nav" class="hidden">
+      <nav id="solar-system-bar" class="body-nav-bar">
+        <button id="solar-system-btn">solar system</button>
+      </nav>
+      <nav id="body-bar" class="body-nav-bar">
+        <button data-body="sun">sun</button>
+        <button data-body="mercury">mercury</button>
+        <button data-body="venus">venus</button>
+        <button data-body="earth">earth</button>
+        <button data-body="moon">moon</button>
+        <button data-body="mars">mars</button>
+        <button data-body="jupiter">jupiter</button>
+        <button data-body="saturn">saturn</button>
+        <button data-body="uranus">uranus</button>
+        <button data-body="neptune">neptune</button>
+      </nav>
+    </div>
+
+    <div id="landing">
+      <div class="landing-stars" aria-hidden="true"></div>
+      <div class="landing-inner">
+        <h1>birth sky</h1>
+        <p class="landing-lead">the heavens from your first breath, frozen in time</p>
+        <div class="landing-form-panel">
+          <form id="birthday-form">
+          <div class="form-row">
+            <input
+              type="date"
+              id="birthday"
+              required
+              min="1900-01-01"
+              autocomplete="off"
+              aria-label="birth date"
+            />
+            <input
+              type="time"
+              id="birthtime"
+              required
+              value="22:00"
+              aria-label="birth time"
+            />
+          </div>
+
+          <label class="form-check">
+            <input type="checkbox" id="time-unknown" />
+            <span>i don't know my birth time</span>
+          </label>
+          <p id="time-hint" class="form-hint">
+            time sets which stars and planets were above the horizon. if unknown,
+            we'll use 10:00 pm as a rough evening sky.
+          </p>
+
+          <div class="form-field">
+            <input
+              type="text"
+              id="birthplace"
+              required
+              autocomplete="off"
+              placeholder="birth city, country"
+              aria-label="birth city"
+            />
+            <button type="button" id="search-place" class="secondary-btn">find</button>
+          </div>
+          <p id="place-hint" class="form-hint">
+            where you were born — not where you live now.
+          </p>
+          <ul id="place-results" class="place-results hidden" role="listbox"></ul>
+          <button type="button" id="born-near-here" class="text-btn">
+            born near where i am now?
+          </button>
+
+          <input type="hidden" id="latitude" />
+          <input type="hidden" id="longitude" />
+          <input type="hidden" id="place-name" />
+
+          <button type="submit" class="submit-btn">show my sky</button>
+          </form>
+          <p class="landing-divider">or</p>
+          <button type="button" id="view-current-sky" class="landing-sky-btn">
+            view current sky
+          </button>
+        </div>
+        <p id="form-error" class="form-error hidden"></p>
+        <p id="loading-text" class="hidden">loading the sky&hellip;</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
