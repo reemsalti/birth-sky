@@ -8,7 +8,10 @@ import { PlanetViewer } from "./PlanetViewer";
 import { SolarSystemView } from "./SolarSystemView";
 import { CameraController } from "./CameraController";
 import { CustomCursor } from "./CustomCursor";
+import { HorizonGlow } from "./HorizonGlow";
 import { spectralTypeDescription } from "./utils/spectralColor";
+import { computeNightFacts } from "./utils/nightFacts";
+import { renderNightReading } from "./utils/nightReading";
 import {
   DEFAULT_UNKNOWN_TIME,
   buildLiveSkyContext,
@@ -144,10 +147,14 @@ const constellationStack = document.getElementById("constellation-stack") as HTM
 const constellationPanel = document.getElementById("constellation-panel") as HTMLElement;
 const panelContent = document.getElementById("panel-content") as HTMLDivElement;
 const panelTitle = constellationPanel.querySelector(".panel-title") as HTMLSpanElement;
-const panelToggle = document.getElementById("panel-toggle") as HTMLButtonElement;
-const panelClose = document.getElementById("panel-close") as HTMLButtonElement;
+const panelTabs = constellationPanel.querySelector(".panel-tabs") as HTMLElement;
+const panelTuck = document.getElementById("panel-tuck") as HTMLButtonElement;
+const nightPanelTab = panelTabs.querySelector('[data-panel-tab="night"]') as HTMLButtonElement;
+let activePanelTab: "night" | "stars" = "night";
 const bodyNav = document.getElementById("body-nav") as HTMLElement;
-const bodyBar = document.getElementById("body-bar") as HTMLElement;
+const dwarfPlanetsButton = document.getElementById("dwarf-planets-btn") as HTMLButtonElement;
+const dwarfPlanetsMenu = document.getElementById("dwarf-planets-menu") as HTMLElement;
+const dwarfPlanetsDropdown = dwarfPlanetsButton.parentElement as HTMLElement;
 const bodyInfo = document.getElementById("body-info") as HTMLElement;
 const bodyInfoContent = document.getElementById("body-info-content") as HTMLDivElement;
 const bodyInfoTitle = document.getElementById("body-info-title") as HTMLSpanElement;
@@ -345,7 +352,7 @@ const camera = new THREE.PerspectiveCamera(
 );
 const controls = new CameraController(camera, canvas);
 new CustomCursor(canvas);
-const viewer = new PlanetViewer(canvas, viewerLabels, bodyInfoContent, bodyInfoTitle);
+const viewer = new PlanetViewer(canvas, bodyInfoContent, bodyInfoTitle);
 const solarSystem = new SolarSystemView(canvas, viewerLabels);
 
 window.addEventListener("resize", () => {
@@ -365,6 +372,7 @@ let starMap: StarMap | null = null;
 let planets: Planets | null = null;
 let constellations: Constellations | null = null;
 let deepSky: DeepSky | null = null;
+let horizonGlow: HorizonGlow | null = null;
 let birthConstellationCode: string | null = null;
 let objectLabelsVisible = true;
 let skyStarted = false;
@@ -457,6 +465,12 @@ function clearViewHighlights() {
   bodyNav.querySelectorAll(".active").forEach((el) => el.classList.remove("active"));
 }
 
+function setDwarfPlanetsMenuOpen(open: boolean) {
+  dwarfPlanetsDropdown.classList.toggle("open", open);
+  dwarfPlanetsMenu.classList.toggle("hidden", !open);
+  dwarfPlanetsButton.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 function setSkyLabelsVisible(visible: boolean) {
   labelContainer.classList.toggle("hidden", !visible);
 }
@@ -478,6 +492,7 @@ function updateStarsButton() {
 }
 
 function setSolarControlsVisible(visible: boolean) {
+  document.body.classList.toggle("solar-system-view", visible);
   toggleOrbitsButton.classList.toggle("hidden", !visible);
   toggleStarsButton.classList.toggle("hidden", !visible);
   if (visible) {
@@ -499,7 +514,25 @@ function setObjectLabelsVisible(visible: boolean) {
   requestRender();
 }
 
-function updateConstellationButtons() {
+function setConstellationStackVisible(visible: boolean) {
+  constellationStack.classList.toggle("hidden", !visible);
+}
+
+function setPanelTucked(tucked: boolean) {
+  constellationStack.classList.toggle("tucked", tucked);
+  panelTuck.setAttribute("aria-expanded", tucked ? "false" : "true");
+  panelTuck.setAttribute("aria-label", tucked ? "show sky info panel" : "tuck sky info panel");
+}
+
+function isBirthSkyView(): boolean {
+  return skyStarted && birthContext !== null && !birthContext.liveSky;
+}
+
+function updateSkyModeChrome() {
+  const liveSky = birthContext?.liveSky ?? false;
+  document.body.classList.toggle("live-sky-mode", liveSky);
+  document.body.classList.toggle("birth-sky-mode", isBirthSkyView());
+
   if (!constellations) return;
   const allVisible = constellations.allLinesVisible;
   const birthVisible = constellations.birthLinesVisible;
@@ -509,22 +542,38 @@ function updateConstellationButtons() {
     : "show constellations";
   toggleConstellationsButton.classList.toggle("active", !allVisible);
 
-  toggleBirthConstellationButton.textContent = birthVisible
-    ? "hide birth constellation"
-    : "show birth constellation";
-  toggleBirthConstellationButton.classList.toggle("active", !birthVisible);
+  if (isBirthSkyView()) {
+    toggleBirthConstellationButton.hidden = false;
+    toggleBirthConstellationButton.textContent = birthVisible
+      ? "hide birth constellation"
+      : "show birth constellation";
+    toggleBirthConstellationButton.classList.toggle("active", !birthVisible);
+  } else {
+    toggleBirthConstellationButton.hidden = true;
+    toggleBirthConstellationButton.classList.remove("active");
+  }
+
+  nightPanelTab.textContent = liveSky ? "right now" : "that night";
+
+  setSolarControlsVisible(solarSystem.active);
 }
 
 function setAllConstellationsVisible(visible: boolean) {
-  constellations?.setAllLinesVisible(visible);
-  updateConstellationButtons();
+  if (!constellations) return;
+  constellations.setAllLinesVisible(visible);
+  // In live sky there is no separate highlighted constellation — hide everything together.
+  if (!isBirthSkyView()) {
+    constellations.setBirthLinesVisible(visible);
+  }
+  updateSkyModeChrome();
   requestRender();
 }
 
 function setBirthConstellationVisible(visible: boolean) {
+  if (!isBirthSkyView()) return;
   constellations?.setBirthLinesVisible(visible);
-  updateConstellationButtons();
-  if (!visible) constellationPanel.classList.add("hidden");
+  updateSkyModeChrome();
+  if (!visible) setConstellationStackVisible(false);
   else if (birthConstellationCode) showConstellationPanel(birthConstellationCode);
   requestRender();
 }
@@ -537,14 +586,19 @@ function applyBodyViewer(bodyKey: string) {
   setSkyLabelsVisible(false);
   setViewerLabelsVisible(true);
   starTooltip.classList.add("hidden");
-  constellationPanel.classList.add("hidden");
+  setConstellationStackVisible(false);
   backButton.classList.remove("hidden");
   bodyInfo.classList.remove("hidden");
   bodyInfo.classList.add("collapsed");
 
   clearViewHighlights();
-  const button = bodyBar.querySelector(`[data-body="${bodyKey}"]`);
+  setDwarfPlanetsMenuOpen(false);
+  updateSkyModeChrome();
+  const button = bodyNav.querySelector(`[data-body="${bodyKey}"]`);
   button?.classList.add("active");
+  if (button?.closest("#dwarf-planets-menu")) {
+    dwarfPlanetsButton.classList.add("active");
+  }
 }
 
 function openBodyViewer(bodyKey: string) {
@@ -565,10 +619,12 @@ function applySolarSystem() {
   if (birthConstellationCode && constellations?.birthLinesVisible) {
     showConstellationPanel(birthConstellationCode);
   } else {
-    constellationPanel.classList.add("hidden");
+    setConstellationStackVisible(false);
   }
 
   clearViewHighlights();
+  setDwarfPlanetsMenuOpen(false);
+  updateSkyModeChrome();
   solarSystemButton.classList.add("active");
 }
 
@@ -584,9 +640,17 @@ function applyBackToSky() {
   setSolarControlsVisible(false);
   setViewerLabelsVisible(false);
   setSkyLabelsVisible(true);
+  starTooltip.classList.add("hidden");
   backButton.classList.add("hidden");
   bodyInfo.classList.add("hidden");
   clearViewHighlights();
+  setDwarfPlanetsMenuOpen(false);
+  updateSkyModeChrome();
+  if (birthConstellationCode && constellations?.birthLinesVisible) {
+    showConstellationPanel(birthConstellationCode);
+  } else {
+    setConstellationStackVisible(true);
+  }
 }
 
 function backToSky() {
@@ -601,12 +665,26 @@ bodyNav.addEventListener("click", (e) => {
     openSolarSystem();
     return;
   }
+  if (button.id === "dwarf-planets-btn") {
+    e.stopPropagation();
+    setDwarfPlanetsMenuOpen(dwarfPlanetsMenu.classList.contains("hidden"));
+    return;
+  }
   const bodyKey = button.dataset.body;
   if (!bodyKey) return;
-  if (viewer.active && bodyBar.querySelector(`[data-body="${bodyKey}"]`)?.classList.contains("active")) {
+  if (
+    viewer.active &&
+    bodyNav.querySelector(`[data-body="${bodyKey}"]`)?.classList.contains("active")
+  ) {
     return;
   }
   openBodyViewer(bodyKey);
+});
+
+document.addEventListener("click", (e) => {
+  if (!dwarfPlanetsDropdown.contains(e.target as Node)) {
+    setDwarfPlanetsMenuOpen(false);
+  }
 });
 
 backButton.addEventListener("click", backToSky);
@@ -630,7 +708,7 @@ toggleConstellationsButton.addEventListener("click", () => {
   setAllConstellationsVisible(!constellations.allLinesVisible);
 });
 toggleBirthConstellationButton.addEventListener("click", () => {
-  if (!constellations) return;
+  if (!constellations || !isBirthSkyView()) return;
   setBirthConstellationVisible(!constellations.birthLinesVisible);
 });
 changeBirthdayButton.addEventListener("click", () => {
@@ -704,16 +782,37 @@ viewCurrentSkyButton.addEventListener("click", async () => {
     viewCurrentSkyButton.textContent = "view current sky";
   }
 });
-panelClose.addEventListener("click", () => constellationPanel.classList.add("hidden"));
-
-panelToggle.addEventListener("click", () => {
-  constellationPanel.classList.toggle("collapsed");
+panelTuck.addEventListener("click", () => {
+  setPanelTucked(!constellationStack.classList.contains("tucked"));
 });
+
+panelTabs.addEventListener("click", (e) => {
+  const tab = (e.target as HTMLElement).closest<HTMLButtonElement>("[data-panel-tab]");
+  if (!tab) return;
+  setPanelTab(tab.dataset.panelTab as "night" | "stars");
+});
+
+function setPanelTab(tab: "night" | "stars") {
+  activePanelTab = tab;
+  panelTabs.querySelectorAll<HTMLButtonElement>(".panel-tab").forEach((button) => {
+    const isActive = button.dataset.panelTab === tab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  panelContent.querySelectorAll<HTMLElement>(".panel-pane").forEach((pane) => {
+    pane.classList.toggle("hidden", pane.dataset.panelPane !== tab);
+  });
+}
 bodyInfoToggle.addEventListener("click", () => {
   bodyInfo.classList.toggle("collapsed");
 });
 
 // --- star hover tooltips ---
+
+function pointerIsOverSky(x: number, y: number): boolean {
+  const hit = document.elementFromPoint(x, y);
+  return hit?.id === "sky";
+}
 
 // only check hover once per frame, not on every raw pointermove event
 let hoverPending = false;
@@ -721,13 +820,41 @@ let hoverX = 0;
 let hoverY = 0;
 
 window.addEventListener("pointermove", (e) => {
-  if (!skyStarted || viewer.active || solarSystem.active || !starMap) return;
+  if (!skyStarted) return;
   hoverX = e.clientX;
   hoverY = e.clientY;
   if (hoverPending) return;
   hoverPending = true;
   requestAnimationFrame(() => {
     hoverPending = false;
+
+    if (viewer.active) {
+      if (!pointerIsOverSky(hoverX, hoverY)) {
+        starTooltip.classList.add("hidden");
+        return;
+      }
+
+      const moon = viewer.pickMoon(hoverX, hoverY);
+      if (moon) {
+        starTooltip.innerHTML = `<div class="star-name">${moon}</div>`;
+        starTooltip.style.left = `${Math.min(hoverX + 16, window.innerWidth - 260)}px`;
+        starTooltip.style.top = `${hoverY + 16}px`;
+        starTooltip.classList.remove("hidden");
+      } else {
+        starTooltip.classList.add("hidden");
+      }
+      return;
+    }
+
+    if (solarSystem.active || !starMap) {
+      starTooltip.classList.add("hidden");
+      return;
+    }
+
+    if (!pointerIsOverSky(hoverX, hoverY)) {
+      starTooltip.classList.add("hidden");
+      return;
+    }
 
     const nebula = deepSky?.findAtScreen(hoverX, hoverY, camera);
     if (nebula) {
@@ -792,16 +919,19 @@ canvas.addEventListener("pointerup", (e) => {
 
 // --- the birth constellation info panel ---
 
-function showConstellationPanel(code: string) {
-  if (!starMap || !constellations?.birthLinesVisible) return;
+function renderStarRows(code: string): string {
+  if (!starMap) return "";
 
-  // the brightest stars this constellation is drawn from
   const members = starMap.pickableStars
     .filter((star) => star.con === code)
     .sort((a, b) => a.mag - b.mag)
     .slice(0, 8);
 
-  const rows = members
+  if (members.length === 0) {
+    return `<p class="reading-aside">no bright catalogued stars in this constellation region.</p>`;
+  }
+
+  return members
     .map((star) => {
       const distance = star.distLy ? `${Math.round(star.distLy).toLocaleString()} ly` : "? ly";
       return `
@@ -812,31 +942,51 @@ function showConstellationPanel(code: string) {
       `;
     })
     .join("");
+}
+
+function showConstellationPanel(code: string) {
+  if (!starMap || !constellations?.birthLinesVisible) return;
 
   const name = CONSTELLATION_NAMES[code] ?? code;
   panelTitle.textContent = name;
+
+  const nightHtml = birthContext
+    ? renderNightReading(computeNightFacts(birthContext), birthContext)
+    : "";
+
   const whenWhere = birthContext ? formatObserverLabel(birthContext) : "";
-  const accuracy = birthContext ? formatAccuracyNote(birthContext) : "";
-  panelContent.innerHTML = `
-    <div class="subtitle">sun in ${name.toLowerCase()} · ${whenWhere}</div>
-    <div class="subtitle accuracy-note">${accuracy}</div>
-    ${rows}
+  const starsHtml = `
+    <div class="stars-section">
+      <div class="subtitle">sun in ${name.toLowerCase()}${whenWhere ? ` · ${whenWhere}` : ""}</div>
+      ${renderStarRows(code)}
+    </div>
   `;
-  constellationPanel.classList.remove("hidden");
-  constellationPanel.classList.add("collapsed"); // stars first, details on demand
+
+  panelContent.innerHTML = `
+    <div class="panel-pane" data-panel-pane="night">${nightHtml}</div>
+    <div class="panel-pane hidden" data-panel-pane="stars">${starsHtml}</div>
+  `;
+
+  setPanelTab(activePanelTab);
+  setConstellationStackVisible(true);
+  constellationPanel.classList.remove("collapsed");
 }
 
 // --- load the sky for a given birthday ---
 
 async function startSky(ctx: BirthContext, { skipIntro = false } = {}) {
   if (skyStarted || skyLoading) return;
-  if (!isValidContext(ctx)) return;
+  if (!isValidContext(ctx)) return false;
 
   skyLoading = true;
   birthContext = ctx;
   if (!ctx.liveSky) {
     saveBirthContext(ctx);
     fillForm(ctx);
+  }
+
+  if (skipIntro) {
+    landing.classList.add("hidden");
   }
   loadingText.classList.remove("hidden");
 
@@ -850,6 +1000,7 @@ async function startSky(ctx: BirthContext, { skipIntro = false } = {}) {
   const birthCode = getSunConstellation(jde);
 
   deepSky.build();
+  horizonGlow = new HorizonGlow();
   scene.add(stars);
   scene.add(deepSky.group);
   scene.add(constellations.group);
@@ -871,13 +1022,15 @@ async function startSky(ctx: BirthContext, { skipIntro = false } = {}) {
   setObjectLabelsVisible(true);
   skyControls.classList.remove("hidden");
   constellationStack.classList.remove("hidden");
-  updateConstellationButtons();
+  updateSkyModeChrome();
   const skyConstellations = constellations!;
 
   if (skipIntro) {
     // coming back - drop straight into the sky, no landing screen or fly-in
     landing.remove();
+    loadingText.classList.add("hidden");
     starMap.opacity = 1;
+    horizonGlow!.fadeIn(0.5);
     skyConstellations.fadeIn(0.5);
     deepSky!.fadeIn(0.5);
     planets.fadeIn(0.5);
@@ -886,20 +1039,40 @@ async function startSky(ctx: BirthContext, { skipIntro = false } = {}) {
     const target = skyConstellations.highlight(birthCode);
     if (target) controls.lookAtRaDec(target.raHours, target.decDeg, 2);
     gsap.delayedCall(1, () => showConstellationPanel(birthCode));
-    return;
+    return true;
   }
 
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const starFade = reduceMotion ? 0.8 : 1.2;
 
   playLandingFade(() => {
+    loadingText.classList.add("hidden");
     gsap.to(starMap, { opacity: 1, duration: starFade, ease: "power1.out" });
     revealSky(birthCode, skyConstellations);
   });
+  return true;
+}
+
+async function restoreSavedSky(ctx: BirthContext) {
+  fillForm(ctx);
+  landing.classList.add("hidden");
+  loadingText.classList.remove("hidden");
+
+  try {
+    const restored = await startSky(ctx, { skipIntro: true });
+    if (!restored) throw new Error("restore failed");
+  } catch {
+    skyLoading = false;
+    skyStarted = false;
+    loadingText.classList.add("hidden");
+    landing.classList.remove("hidden");
+    showFormError("couldn't reload your saved sky — check your details and try again.");
+  }
 }
 
 function revealSky(birthCode: string, skyConstellations: Constellations) {
   skyConstellations.fadeIn();
+  horizonGlow?.fadeIn(5);
   deepSky?.fadeIn(5);
   planets!.fadeIn();
   bodyNav.classList.remove("hidden");
@@ -1001,7 +1174,6 @@ if (sessionStorage.getItem("birth-sky-pick-new")) {
 } else {
   const saved = loadBirthContext();
   if (saved) {
-    fillForm(saved);
-    startSky(saved, { skipIntro: true });
+    void restoreSavedSky(saved);
   }
 }

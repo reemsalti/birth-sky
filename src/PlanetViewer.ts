@@ -7,7 +7,7 @@ import { disposeObject3D } from "./utils/dispose";
 import { getGlowTexture } from "./utils/glowTexture";
 import { getSphere } from "./utils/geometryCache";
 import { loadTexture } from "./utils/textureCache";
-import { updateLabels } from "./utils/labels";
+import { buildPlanetaryRings } from "./utils/planetaryRings";
 
 // Close-up view of a single body (planet / sun / moon) with its moons and
 // rings. The sky (stars, lines, other planets) sits on a backdrop sphere
@@ -15,6 +15,7 @@ import { updateLabels } from "./utils/labels";
 
 const BODY_RADIUS = 2; // every body renders at this size, facts tell the real story
 const BACKDROP_RADIUS = 180;
+const MOON_ORBIT_SCALE = 0.4;
 
 export class PlanetViewer {
   scene = new THREE.Scene();
@@ -25,22 +26,20 @@ export class PlanetViewer {
   private currentGroup: THREE.Group | null = null;
   private spinners: { object: THREE.Object3D; speed: number }[] = [];
   private moonPivots: { pivot: THREE.Object3D; speed: number }[] = [];
-  private labels: { element: HTMLDivElement; object: THREE.Object3D }[] = [];
-  private labelContainer: HTMLElement;
+  private moonMeshes: THREE.Mesh[] = [];
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
   private infoPanel: HTMLElement;
   private infoTitle: HTMLElement;
   private sunLight: THREE.DirectionalLight;
   private skyBackdrop = new THREE.Group();
-  private labelsVisible = true;
   private enterTween: gsap.core.Tween | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
-    labelContainer: HTMLElement,
     infoPanel: HTMLElement,
     infoTitle: HTMLElement
   ) {
-    this.labelContainer = labelContainer;
     this.infoPanel = infoPanel;
     this.infoTitle = infoTitle;
 
@@ -113,6 +112,7 @@ export class PlanetViewer {
 
     const body = new THREE.Mesh(getSphere(BODY_RADIUS, 40, 40), material);
     body.userData.isBody = true;
+    if (info.ellipsoid) body.scale.set(...info.ellipsoid);
     group.add(body);
     this.spinners.push({ object: body, speed: info.spinSpeed });
 
@@ -138,14 +138,19 @@ export class PlanetViewer {
     }
 
     if (info.ring) {
-      group.add(this.makeRing(info.ring));
+      group.add(buildPlanetaryRings(info.ring, BODY_RADIUS, this.sunLight.position));
     }
 
-    for (const moonInfo of info.moons ?? []) {
+    const moons = info.moons ?? [];
+    const furthestMoon = moons.reduce((max, moon) => Math.max(max, moon.distance), 0);
+    this.controls.maxDistance = Math.max(BODY_RADIUS * 14, BODY_RADIUS * furthestMoon * 2.2);
+
+    for (const [index, moonInfo] of moons.entries()) {
       // each moon hangs off its own pivot at the planet's center;
       // spinning the pivot makes the moon orbit
       const pivot = new THREE.Object3D();
-      pivot.rotation.y = Math.random() * Math.PI * 2; // random start position
+      // spread moons evenly so several stay visible from the default camera
+      pivot.rotation.y = (index / moons.length) * Math.PI * 2;
 
       let moonMaterial: THREE.MeshStandardMaterial;
       if (moonInfo.texture) {
@@ -159,28 +164,25 @@ export class PlanetViewer {
 
       const moon = new THREE.Mesh(getSphere(BODY_RADIUS * moonInfo.size, 24, 24), moonMaterial);
       moon.userData.isBody = true;
+      moon.userData.moonName = moonInfo.name;
       moon.position.x = BODY_RADIUS * moonInfo.distance;
       pivot.add(moon);
       group.add(pivot);
       this.moonPivots.push({ pivot, speed: moonInfo.speed });
-
-      const label = document.createElement("div");
-      label.className = "planet-label";
-      label.textContent = moonInfo.name;
-      this.labelContainer.appendChild(label);
-      this.labels.push({ element: label, object: moon });
+      this.moonMeshes.push(moon);
     }
 
     this.scene.add(group);
 
     this.enterTween?.kill();
     this.controls.enabled = false;
-    this.camera.position.set(-0.7, BODY_RADIUS * 2.8, BODY_RADIUS * 9);
+    const enterZ = Math.max(BODY_RADIUS * 4.5, BODY_RADIUS * furthestMoon * 1.35);
+    this.camera.position.set(-0.7, BODY_RADIUS * 2.8, enterZ * 2);
     this.controls.target.set(-0.7, 0, 0);
     this.enterTween = gsap.to(this.camera.position, {
       x: -0.7,
       y: BODY_RADIUS * 1.2,
-      z: BODY_RADIUS * 4.5,
+      z: enterZ,
       duration: 1.05,
       ease: "power2.out",
       onComplete: () => {
@@ -199,8 +201,44 @@ export class PlanetViewer {
     `;
   }
 
-  setLabelsVisible(visible: boolean) {
-    this.labelsVisible = visible;
+  setLabelsVisible(_visible: boolean) {
+    // moon names are shown on hover instead of persistent labels
+  }
+
+  pickMoon(x: number, y: number): string | null {
+    if (this.moonMeshes.length === 0) return null;
+
+    this.pointer.x = (x / window.innerWidth) * 2 - 1;
+    this.pointer.y = -(y / window.innerHeight) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    const hits = this.raycaster.intersectObjects(this.moonMeshes, false);
+    for (const hit of hits) {
+      const name = hit.object.userData.moonName as string | undefined;
+      if (name) return name;
+    }
+
+    // small moons are hard to hit with a ray — fall back to screen distance
+    const worldPos = new THREE.Vector3();
+    const projected = new THREE.Vector3();
+    let closest: { name: string; dist: number } | null = null;
+
+    for (const mesh of this.moonMeshes) {
+      mesh.getWorldPosition(worldPos);
+      projected.copy(worldPos).project(this.camera);
+      if (projected.z > 1) continue;
+
+      const screenX = ((projected.x + 1) / 2) * window.innerWidth;
+      const screenY = ((1 - projected.y) / 2) * window.innerHeight;
+      const dist = Math.hypot(screenX - x, screenY - y);
+      if (dist > 32) continue;
+
+      const name = mesh.userData.moonName as string | undefined;
+      if (!name) continue;
+      if (!closest || dist < closest.dist) closest = { name, dist };
+    }
+
+    return closest?.name ?? null;
   }
 
   hide() {
@@ -216,21 +254,9 @@ export class PlanetViewer {
       object.rotation.y += speed * dt;
     }
     for (const { pivot, speed } of this.moonPivots) {
-      pivot.rotation.y += speed * dt;
+      pivot.rotation.y += speed * MOON_ORBIT_SCALE * dt;
     }
     this.controls.update();
-
-    if (this.currentGroup) {
-      const bodies: THREE.Mesh[] = [];
-      this.currentGroup.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.userData.isBody) bodies.push(child);
-      });
-      if (this.labelsVisible) {
-        updateLabels(this.camera, this.labels, bodies);
-      } else {
-        for (const { element } of this.labels) element.style.opacity = "0";
-      }
-    }
   }
 
   private clear() {
@@ -241,46 +267,7 @@ export class PlanetViewer {
     }
     this.spinners = [];
     this.moonPivots = [];
-    for (const { element } of this.labels) element.remove();
-    this.labels = [];
-  }
-
-  private makeRing(ring: { inner: number; outer: number; texture?: string; color?: number; opacity: number }) {
-    const inner = BODY_RADIUS * ring.inner;
-    const outer = BODY_RADIUS * ring.outer;
-    const geometry = new THREE.RingGeometry(inner, outer, 64);
-
-    // RingGeometry's default UVs don't work for a ring texture strip -
-    // remap them so u runs from the inner edge (0) to the outer edge (1)
-    const positions = geometry.attributes.position;
-    const uvs = geometry.attributes.uv;
-    const point = new THREE.Vector3();
-    for (let i = 0; i < positions.count; i++) {
-      point.fromBufferAttribute(positions, i);
-      const u = (point.length() - inner) / (outer - inner);
-      uvs.setXY(i, u, 1);
-    }
-
-    let material: THREE.MeshBasicMaterial;
-    if (ring.texture) {
-      material = new THREE.MeshBasicMaterial({
-        map: loadTexture(ring.texture),
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: ring.opacity,
-      });
-    } else {
-      material = new THREE.MeshBasicMaterial({
-        color: ring.color,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: ring.opacity,
-      });
-    }
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = Math.PI / 2; // lay it flat around the equator
-    return mesh;
+    this.moonMeshes = [];
   }
 
   // Blends the day texture with the night-lights texture along the

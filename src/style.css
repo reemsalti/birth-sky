@@ -55,6 +55,21 @@ button {
   cursor: grab;
 }
 
+#horizon-haze {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  background: linear-gradient(
+    to top,
+    rgba(10, 8, 14, 0.72) 0%,
+    rgba(14, 10, 18, 0.28) 10%,
+    rgba(8, 6, 12, 0.08) 18%,
+    transparent 28%
+  );
+}
+
 #sky.dragging {
   cursor: grabbing;
 }
@@ -547,15 +562,169 @@ button {
   line-height: 1.4;
 }
 
+.panel-tabs {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0 0.65rem 0.45rem;
+  border-bottom: 1px solid var(--hud-border-subtle);
+}
+
+.panel-tab {
+  font-family: var(--font-display);
+  flex: 1;
+  background: var(--hud-surface-inner);
+  border: 1px solid var(--hud-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--hud-text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding: 0.38rem 0.45rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  text-transform: lowercase;
+}
+
+.panel-tab:hover {
+  color: var(--hud-text);
+  border-color: var(--hud-border);
+}
+
+.panel-tab.active {
+  background: var(--tint-active);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--hud-text);
+}
+
+.info-panel.collapsed .panel-tabs {
+  display: none;
+}
+
+.reading-section,
+.stars-section {
+  padding-top: 0.15rem;
+}
+
+.reading-heading {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.07em;
+  color: var(--hud-text);
+  margin-bottom: 0.45rem;
+  text-transform: lowercase;
+}
+
+.reading-disclaimer,
+.reading-aside {
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--hud-text-muted);
+  margin-bottom: 0.55rem;
+}
+
+.reading-disclaimer {
+  font-style: italic;
+}
+
+.reading-facts {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--hud-border-subtle);
+}
+
+.fact-row {
+  display: grid;
+  grid-template-columns: 5.8rem 1fr;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.fact-label {
+  color: var(--hud-text-muted);
+  letter-spacing: 0.03em;
+}
+
+.fact-value {
+  color: var(--hud-text);
+}
+
+.reading-traditions {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.reading-block {
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.reading-block:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.reading-tradition {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--hud-accent-dim);
+  margin-bottom: 0.2rem;
+  text-transform: lowercase;
+}
+
+.reading-insight {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--hud-text);
+  margin-bottom: 0.25rem;
+}
+
+.reading-context {
+  font-size: 0.66rem;
+  line-height: 1.4;
+  color: var(--hud-text-muted);
+  font-style: italic;
+}
+
+
 #loading-text {
-  margin-top: 1.5rem;
+  position: fixed;
+  left: 50%;
+  bottom: 2.5rem;
+  transform: translateX(-50%);
   font-family: var(--font-display);
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   color: var(--hud-accent-dim);
+  z-index: 8;
+  pointer-events: none;
 }
 
 .hidden {
+  display: none;
+}
+
+/* birth-only controls — not shown when viewing the live sky from current location */
+.live-sky-mode #toggle-birth-constellation,
+.live-sky-mode #change-birthday {
+  display: none !important;
+}
+
+/* solar-system-only controls */
+#toggle-orbits,
+#toggle-stars {
+  display: none;
+}
+
+body.solar-system-view #toggle-orbits,
+body.solar-system-view #toggle-stars {
+  display: inline-flex;
+}
+
+body.solar-system-view #toggle-orbits.hidden,
+body.solar-system-view #toggle-stars.hidden {
   display: none;
 }
 
@@ -651,35 +820,112 @@ button {
 #constellation-stack {
   position: fixed;
   left: 1rem;
-  bottom: 5.5rem;
-  width: 240px;
+  bottom: 6.5rem;
+  width: min(22.5rem, calc(100vw - 2rem));
+  z-index: 7;
+  pointer-events: none;
+  transition: transform 0.35s ease;
+}
+
+#constellation-stack.tucked {
+  transform: translateX(calc(-100% + 1.65rem - 1rem));
+}
+
+#constellation-stack > * {
+  pointer-events: auto;
+}
+
+.constellation-panel-shell {
   display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  z-index: 5;
+  align-items: stretch;
+  width: 100%;
 }
 
 #constellation-panel {
   position: relative;
   left: auto;
   bottom: auto;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  max-height: min(52vh, calc(100vh - 10rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  border-right: none;
+  font-size: 0.84rem;
 }
 
-#constellation-stack #change-birthday {
-  width: 100%;
-  text-align: center;
+.panel-tuck-tab {
+  flex-shrink: 0;
+  width: 1.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--hud-surface);
   border: 1px solid var(--hud-border);
-  box-shadow: var(--hud-shadow-sm);
+  border-left: 1px solid var(--hud-border-subtle);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   color: var(--hud-text-muted);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: var(--hud-shadow);
   backdrop-filter: blur(14px);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-#constellation-stack #change-birthday:hover {
+.panel-tuck-tab:hover {
   background: var(--hud-surface-hover);
-  border-color: rgba(255, 255, 255, 0.18);
   color: var(--hud-text);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.panel-tuck-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  transition: transform 0.35s ease;
+}
+
+#constellation-stack.tucked .panel-tuck-icon {
+  transform: rotate(180deg);
+}
+
+#constellation-panel .panel-header {
+  padding: 0.6rem 1rem 0.45rem;
+}
+
+#constellation-panel .panel-tabs {
+  padding: 0 0.85rem 0.5rem;
+}
+
+#constellation-panel .panel-tab {
+  font-size: 0.68rem;
+  padding: 0.42rem 0.5rem;
+}
+
+#constellation-panel .panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 1rem 0.95rem;
+}
+
+.info-panel.collapsed .panel-footer {
+  display: none;
+}
+
+.panel-footer {
+  flex-shrink: 0;
+  padding: 0.45rem 0.65rem 0.6rem;
+  border-top: 1px solid var(--hud-border-subtle);
+}
+
+.panel-footer .sky-control-btn {
+  width: 100%;
+  text-align: center;
 }
 
 #body-info {
@@ -740,6 +986,12 @@ button {
   max-height: calc(38vh - 2.5rem);
 }
 
+#constellation-panel .panel-header,
+#constellation-panel .panel-tabs,
+#constellation-panel .panel-footer {
+  flex-shrink: 0;
+}
+
 .info-panel.collapsed .panel-body {
   display: none;
 }
@@ -762,10 +1014,32 @@ button {
   color: var(--hud-accent);
 }
 
+#constellation-panel .reading-heading {
+  font-size: 0.72rem;
+}
+
+#constellation-panel .reading-disclaimer,
+#constellation-panel .reading-aside {
+  font-size: 0.72rem;
+}
+
+#constellation-panel .fact-row {
+  grid-template-columns: 6.4rem 1fr;
+}
+
+#constellation-panel .fact-label,
+#constellation-panel .fact-value {
+  font-size: 0.72rem;
+}
+
+#constellation-panel .reading-insight {
+  font-size: 0.76rem;
+}
+
 #constellation-panel .subtitle {
   font-family: var(--font-display);
   color: var(--hud-text-muted);
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   letter-spacing: 0.05em;
   margin-bottom: 0.7rem;
 }
@@ -860,6 +1134,48 @@ button {
   background: var(--tint-active);
   border-color: rgba(255, 255, 255, 0.2);
   color: var(--hud-text);
+}
+
+.body-nav-dropdown {
+  position: relative;
+}
+
+.body-nav-dropdown > button .dropdown-chevron {
+  display: inline-block;
+  margin-left: 0.15rem;
+  font-size: 0.85em;
+  transition: transform 0.15s;
+}
+
+.body-nav-dropdown.open > button .dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.body-nav-submenu {
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 8.5rem;
+  padding: 0.4rem;
+  background: var(--hud-surface);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--hud-shadow);
+  backdrop-filter: blur(14px);
+  z-index: 2;
+}
+
+.body-nav-submenu.hidden {
+  display: none;
+}
+
+.body-nav-submenu button {
+  width: 100%;
+  text-align: left;
 }
 
 #back-to-sky {

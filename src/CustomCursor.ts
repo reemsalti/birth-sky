@@ -1,7 +1,7 @@
 type CursorMode = "default" | "pointer";
 
 const INTERACTIVE_SELECTOR =
-  "button, a, input, select, textarea, label, [role='button'], .panel-toggle, .panel-dismiss";
+  "button, a, input, select, textarea, label, [role='button'], .panel-toggle, .panel-dismiss, .panel-tuck-tab";
 
 export class CustomCursor {
   private root: HTMLDivElement | null = null;

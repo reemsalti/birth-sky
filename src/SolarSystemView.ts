@@ -17,7 +17,14 @@ import { getGlowTexture } from "./utils/glowTexture";
 import { getSphere } from "./utils/geometryCache";
 import { loadTexture } from "./utils/textureCache";
 import { updateLabels } from "./utils/labels";
+import { buildPlanetaryRings, updateRingSunDirection } from "./utils/planetaryRings";
 import { getJulianDay, parseBirthMoment, type BirthContext } from "./utils/observer";
+import {
+  DWARF_PLANET_KEYS,
+  getDwarfPlanetHeliocentric,
+  getDwarfPlanetOrbitDays,
+  type DwarfPlanetKey,
+} from "./utils/dwarfPlanets";
 
 // Distances are real (from VSOP87) but scaled so you can actually see everything.
 // Sizes are exaggerated on purpose — at true scale every planet would be a dot.
@@ -26,6 +33,18 @@ const AU_SCALE = 14; // scene units per astronomical unit
 const BACKDROP_RADIUS = 800;
 /** One real second advances the ephemeris by one real second (86400 s = 1 day). */
 const SECONDS_PER_DAY = 86_400;
+
+const DWARF_PLANETS: {
+  key: DwarfPlanetKey;
+  size: number;
+  glow: number;
+}[] = [
+  { key: "ceres", size: 0.28, glow: 0xa89880 },
+  { key: "pluto", size: 0.32, glow: 0xd4c4b4 },
+  { key: "eris", size: 0.3, glow: 0xd0c8c0 },
+  { key: "haumea", size: 0.24, glow: 0xb8a898 },
+  { key: "makemake", size: 0.26, glow: 0x8a6a50 },
+];
 
 const PLANETS = [
   { key: "mercury", data: vsop87Bmercury, size: 0.45, glow: 0xb5a89a, periodDays: 87.97 },
@@ -49,7 +68,7 @@ interface AnimatedBody {
   key: string;
   mesh: THREE.Mesh;
   glow: THREE.Sprite;
-  saturnRing?: THREE.Mesh;
+  saturnRing?: THREE.Group;
   planet?: VsopPlanet;
 }
 
@@ -65,6 +84,15 @@ function eclipticToPosition(lon: number, lat: number, rangeAu: number): THREE.Ve
 function heliocentricAt(engine: VsopPlanet, jde: number): THREE.Vector3 {
   const pos = engine.position(jde);
   return eclipticToPosition(pos.lon, pos.lat, pos.range);
+}
+
+function dwarfPlanetHeliocentricAt(key: DwarfPlanetKey, jde: number): THREE.Vector3 {
+  const pos = getDwarfPlanetHeliocentric(key, jde);
+  return eclipticToPosition(pos.lon, pos.lat, pos.range);
+}
+
+function isDwarfPlanetKey(key: string): key is DwarfPlanetKey {
+  return (DWARF_PLANET_KEYS as readonly string[]).includes(key);
 }
 
 export class SolarSystemView {
@@ -88,6 +116,7 @@ export class SolarSystemView {
   private sunLight: THREE.PointLight;
   private labelsVisible = true;
   private enterTween: gsap.core.Tween | null = null;
+  private asteroidBelt: THREE.Points | null = null;
 
   private epochJde = 0;
   private simDays = 0;
@@ -175,17 +204,25 @@ export class SolarSystemView {
     this.simDays = 0;
 
     for (const planet of PLANETS) {
-      this.planetEngines.set(planet.key, new planetposition.Planet(planet.data));
+      if ("data" in planet && planet.data) {
+        this.planetEngines.set(planet.key, new planetposition.Planet(planet.data));
+      }
     }
 
     this.addSun();
     this.addOrbitPaths(this.epochJde);
+    this.asteroidBelt = this.buildAsteroidBelt();
+    this.orbitsGroup.add(this.asteroidBelt);
 
     for (const planet of PLANETS) {
-      const engine = this.planetEngines.get(planet.key)!;
+      const engine = this.planetEngines.get(planet.key);
       this.bodies.push(
         this.addBody(planet.key, planet.size, planet.glow, engine)
       );
+    }
+
+    for (const dwarf of DWARF_PLANETS) {
+      this.bodies.push(this.addBody(dwarf.key, dwarf.size, dwarf.glow));
     }
 
     this.bodies.push(this.addBody("moon", 0.22, 0xd8d8d8));
@@ -262,12 +299,20 @@ export class SolarSystemView {
     const earthEngine = this.planetEngines.get("earth");
 
     for (const body of this.bodies) {
-      if (body.key === "moon" || !body.planet) continue;
+      if (body.key === "moon") continue;
 
-      const position = heliocentricAt(body.planet, jde);
+      const position = isDwarfPlanetKey(body.key)
+        ? dwarfPlanetHeliocentricAt(body.key, jde)
+        : body.planet
+          ? heliocentricAt(body.planet, jde)
+          : null;
+      if (!position) continue;
+
       body.mesh.position.copy(position);
       body.glow.position.copy(position);
-      if (body.saturnRing) body.saturnRing.position.copy(position);
+      if (body.saturnRing) {
+        updateRingSunDirection(body.saturnRing, position.clone().negate());
+      }
 
       if (body.key === "earth") this.scratchEarth.copy(position);
     }
@@ -314,6 +359,7 @@ export class SolarSystemView {
       new THREE.MeshBasicMaterial({ map: loadTexture(info.texture) })
     );
     mesh.userData.isBody = true;
+    if (info.ellipsoid) mesh.scale.set(...info.ellipsoid);
     mesh.rotation.z = THREE.MathUtils.degToRad(info.tilt);
     this.bodiesGroup.add(mesh);
     this.spinners.push({ mesh, speed: info.spinSpeed });
@@ -321,10 +367,10 @@ export class SolarSystemView {
     const glow = this.makeGlowSprite(size * 3.5, glowColor);
     this.bodiesGroup.add(glow);
 
-    let saturnRing: THREE.Mesh | undefined;
+    let saturnRing: THREE.Group | undefined;
     if (info.ring) {
-      saturnRing = this.makeRing(size, info.ring);
-      this.bodiesGroup.add(saturnRing);
+      saturnRing = buildPlanetaryRings(info.ring, size, new THREE.Vector3(1, 0, 0));
+      mesh.add(saturnRing);
     }
 
     this.registerLabel(mesh, key, info.name);
@@ -340,7 +386,72 @@ export class SolarSystemView {
       );
     }
 
+    for (const dwarf of DWARF_PLANETS) {
+      const periodDays = getDwarfPlanetOrbitDays(dwarf.key);
+      this.orbitsGroup.add(
+        this.buildDwarfPlanetOrbitLine(dwarf.key, epochJde, periodDays, 0x998877, 0.28)
+      );
+    }
+
     this.orbitsGroup.add(this.buildMoonOrbitLine(epochJde));
+  }
+
+  private buildDwarfPlanetOrbitLine(
+    key: DwarfPlanetKey,
+    epochJde: number,
+    periodDays: number,
+    color: number,
+    opacity: number
+  ): THREE.Line {
+    const samples = Math.min(180, Math.max(72, Math.round(periodDays / 40)));
+    const points: THREE.Vector3[] = [];
+
+    for (let i = 0; i <= samples; i++) {
+      const dayOffset = (i / samples) * periodDays;
+      points.push(dwarfPlanetHeliocentricAt(key, epochJde + dayOffset));
+    }
+
+    return this.buildOrbitLineFromPoints(points, color, opacity);
+  }
+
+  private buildAsteroidBelt(): THREE.Points {
+    const innerAu = 2.2;
+    const outerAu = 3.3;
+    const count = 4200;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      const radiusAu = innerAu + Math.random() * (outerAu - innerAu);
+      const angle = Math.random() * Math.PI * 2;
+      const lat = (Math.random() - 0.5) * 0.18;
+      const pos = eclipticToPosition(angle, lat, radiusAu);
+      positions[i * 3] = pos.x;
+      positions[i * 3 + 1] = pos.y;
+      positions[i * 3 + 2] = pos.z;
+
+      const shade = 0.45 + Math.random() * 0.35;
+      colors[i * 3] = shade * 0.72;
+      colors[i * 3 + 1] = shade * 0.66;
+      colors[i * 3 + 2] = shade * 0.58;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.14,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+
+    const belt = new THREE.Points(geometry, material);
+    belt.frustumCulled = false;
+    return belt;
   }
 
   private buildOrbitLine(
@@ -429,42 +540,6 @@ export class SolarSystemView {
     this.labels = [];
   }
 
-  private makeRing(bodySize: number, ring: { inner: number; outer: number; texture?: string; color?: number; opacity: number }) {
-    const inner = bodySize * ring.inner;
-    const outer = bodySize * ring.outer;
-    const geometry = new THREE.RingGeometry(inner, outer, 96);
-
-    const positions = geometry.attributes.position;
-    const uvs = geometry.attributes.uv;
-    const point = new THREE.Vector3();
-    for (let i = 0; i < positions.count; i++) {
-      point.fromBufferAttribute(positions, i);
-      const u = (point.length() - inner) / (outer - inner);
-      uvs.setXY(i, u, 1);
-    }
-
-    let material: THREE.MeshBasicMaterial;
-    if (ring.texture) {
-      material = new THREE.MeshBasicMaterial({
-        map: loadTexture(ring.texture),
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: ring.opacity,
-      });
-    } else {
-      material = new THREE.MeshBasicMaterial({
-        color: ring.color,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: ring.opacity,
-      });
-    }
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = Math.PI / 2;
-    return mesh;
-  }
-
   private makeGlowSprite(size: number, color: number) {
     const sprite = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -491,6 +566,6 @@ export class SolarSystemView {
     this.epochJde = 0;
     this.simDays = 0;
     this.removeLabels();
-    this.labelData = [];
+    this.asteroidBelt = null;
   }
 }

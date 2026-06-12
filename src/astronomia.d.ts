@@ -2,6 +2,7 @@
 declare module "astronomia" {
   export const planetposition: any;
   export const elliptic: any;
+  export const kepler: any;
   export const moonposition: any;
   export const coord: any;
   export const nutation: any;

@@ -15,6 +15,7 @@
   <body>
     <canvas id="sky"></canvas>
     <div id="view-fade" aria-hidden="true"></div>
+    <p id="loading-text" class="hidden">loading the sky&hellip;</p>
 
     <!-- labels for planets get positioned over the canvas from JS -->
     <div id="labels"></div>
@@ -25,17 +26,30 @@
 
     <!-- info about the birth constellation's stars -->
     <div id="constellation-stack" class="hidden">
-      <aside id="constellation-panel" class="info-panel hidden collapsed">
-        <div class="panel-header">
-          <button id="panel-toggle" class="panel-toggle" aria-label="toggle constellation info">
+      <div class="constellation-panel-shell">
+        <aside id="constellation-panel" class="info-panel">
+          <div class="panel-header">
             <span class="panel-title">constellation</span>
-            <span class="panel-chevron">&#8964;</span>
-          </button>
-          <button id="panel-close" class="panel-dismiss" aria-label="dismiss">&times;</button>
-        </div>
-        <div id="panel-content" class="panel-body"></div>
-      </aside>
-      <button id="change-birthday" class="sky-control-btn">change date</button>
+          </div>
+          <div class="panel-tabs" role="tablist" aria-label="constellation panel views">
+            <button type="button" class="panel-tab active" data-panel-tab="night" role="tab" aria-selected="true">that night</button>
+            <button type="button" class="panel-tab" data-panel-tab="stars" role="tab" aria-selected="false">bright stars</button>
+          </div>
+          <div id="panel-content" class="panel-body"></div>
+          <div class="panel-footer">
+            <button id="change-birthday" class="sky-control-btn">change date</button>
+          </div>
+        </aside>
+        <button
+          id="panel-tuck"
+          class="panel-tuck-tab"
+          type="button"
+          aria-label="tuck sky info panel"
+          aria-expanded="true"
+        >
+          <span class="panel-tuck-icon" aria-hidden="true">&#8249;</span>
+        </button>
+      </div>
     </div>
 
     <!-- close-up body viewer chrome -->
@@ -73,6 +87,18 @@
         <button data-body="saturn">saturn</button>
         <button data-body="uranus">uranus</button>
         <button data-body="neptune">neptune</button>
+        <div class="body-nav-dropdown">
+          <button id="dwarf-planets-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            dwarf planets <span class="dropdown-chevron">&#8964;</span>
+          </button>
+          <div id="dwarf-planets-menu" class="body-nav-submenu hidden" role="menu">
+            <button data-body="ceres" role="menuitem">ceres</button>
+            <button data-body="pluto" role="menuitem">pluto</button>
+            <button data-body="eris" role="menuitem">eris</button>
+            <button data-body="haumea" role="menuitem">haumea</button>
+            <button data-body="makemake" role="menuitem">makemake</button>
+          </div>
+        </div>
       </nav>
     </div>
 
@@ -141,7 +167,6 @@
           </button>
         </div>
         <p id="form-error" class="form-error hidden"></p>
-        <p id="loading-text" class="hidden">loading the sky&hellip;</p>
       </div>
     </div>
 

@@ -99,11 +99,16 @@ export function loadBirthContext(): BirthContext | null {
 }
 
 export function isValidContext(ctx: BirthContext): boolean {
+  if (!ctx || typeof ctx !== "object") return false;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ctx.date)) return false;
   if (!/^\d{2}:\d{2}$/.test(ctx.time)) return false;
-  if (isNaN(ctx.latitude) || ctx.latitude < -90 || ctx.latitude > 90) return false;
-  if (isNaN(ctx.longitude) || ctx.longitude < -180 || ctx.longitude > 180) return false;
-  return !isNaN(parseBirthMoment(ctx).getTime());
+
+  const latitude = Number(ctx.latitude);
+  const longitude = Number(ctx.longitude);
+  if (isNaN(latitude) || latitude < -90 || latitude > 90) return false;
+  if (isNaN(longitude) || longitude < -180 || longitude > 180) return false;
+
+  return !isNaN(parseBirthMoment({ ...ctx, latitude, longitude }).getTime());
 }
 
 export function formatObserverLabel(ctx: BirthContext): string {

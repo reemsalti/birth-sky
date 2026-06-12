@@ -17,8 +17,11 @@ import {
   parseBirthMoment,
   type BirthContext,
 } from "./utils/observer";
+import {
+  getDwarfPlanetEquatorial,
+  type DwarfPlanetKey,
+} from "./utils/dwarfPlanets";
 
-// sizes are for looks, not to scale - Jupiter at true scale would be invisible
 const PLANET_INFO = [
   { name: "Mercury", data: vsop87Bmercury, color: 0xb5a89a, size: 4 },
   { name: "Venus", data: vsop87Bvenus, color: 0xf5e9c8, size: 7 },
@@ -27,6 +30,14 @@ const PLANET_INFO = [
   { name: "Saturn", data: vsop87Bsaturn, color: 0xe8d9a0, size: 7 },
   { name: "Uranus", data: vsop87Buranus, color: 0x9fd6d9, size: 5 },
   { name: "Neptune", data: vsop87Bneptune, color: 0x6e8fe0, size: 5 },
+];
+
+const DWARF_PLANET_INFO: { key: DwarfPlanetKey; name: string; color: number; size: number }[] = [
+  { key: "ceres", name: "Ceres", color: 0xa89880, size: 3 },
+  { key: "pluto", name: "Pluto", color: 0xc4b4a4, size: 3 },
+  { key: "eris", name: "Eris", color: 0xc8c0b8, size: 3 },
+  { key: "haumea", name: "Haumea", color: 0xb0a090, size: 3 },
+  { key: "makemake", name: "Makemake", color: 0x8a6848, size: 3 },
 ];
 
 // planets sit a bit inside the star sphere so they never z-fight with stars
@@ -57,6 +68,14 @@ export class Planets {
       const planetCoord = elliptic.position(planet, earth, jde);
       const raHours = (planetCoord.ra / (Math.PI * 2)) * 24;
       const decDeg = THREE.MathUtils.radToDeg(planetCoord.dec);
+      if (!isAboveHorizon(raHours, decDeg, ctx, jde)) continue;
+      this.addBody(info.name, info.color, info.size, raHours, decDeg, glowTexture);
+    }
+
+    for (const info of DWARF_PLANET_INFO) {
+      const dwarf = getDwarfPlanetEquatorial(info.key, jde);
+      const raHours = (dwarf.ra / (Math.PI * 2)) * 24;
+      const decDeg = THREE.MathUtils.radToDeg(dwarf.dec);
       if (!isAboveHorizon(raHours, decDeg, ctx, jde)) continue;
       this.addBody(info.name, info.color, info.size, raHours, decDeg, glowTexture);
     }
